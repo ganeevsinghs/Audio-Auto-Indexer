@@ -1,0 +1,10 @@
+.env
+.secret
+.venv/
+__pycache__/
+*.pyc
+sessions/
+.DS_Store
+audio/
+splittracks/
+*.mp3

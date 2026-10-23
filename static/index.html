@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SplitTracks</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect fill='%23f3ead8' width='32' height='32'/%3E%3Cpath fill='%23c24e12' d='M8 22V10l12 6-12 6z'/%3E%3C/svg%3E"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Outfit:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="grain" aria-hidden="true"></div>
+    <aside class="spine" aria-hidden="true">SplitTracks</aside>
+
+    <main>
+      <header class="masthead">
+        <p class="eyebrow">Kirtan to SoundCloud</p>
+        <div class="masthead-row">
+          <h1>Split a program into tracks.</h1>
+          <div class="masthead-actions">
+            <button type="button" class="text-btn" id="restart">Restart</button>
+            <div class="account" id="account" hidden>
+              <span id="account-name"></span>
+              <button type="button" class="text-btn" id="sign-out">Sign out</button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <section class="panel" id="audio-step">
+        <div class="panel-head">
+          <h2>Audio</h2>
+          <div class="panel-actions">
+            <button type="button" class="text-btn" id="reset-audio">Reset</button>
+            <span class="panel-kicker">01</span>
+          </div>
+        </div>
+        <div class="dropzone" id="audio-drop" role="button" tabindex="0">
+          <input type="file" id="audio-input" accept="audio/*,.mp3,.wav,.flac,.m4a,.aac,.ogg" hidden />
+          <span class="drop-mark" aria-hidden="true"></span>
+          <span class="drop-title">Insert the full recording</span>
+          <span class="drop-hint">Drop an audio file, or click to browse</span>
+        </div>
+        <div class="file-chip" id="audio-chip" hidden>
+          <div>
+            <strong id="audio-name"></strong>
+            <span id="audio-meta"></span>
+          </div>
+          <button type="button" class="text-btn" id="replace-audio">Replace</button>
+        </div>
+      </section>
+
+      <section class="panel reveal" id="program-step" hidden>
+        <div class="panel-head">
+          <h2>Album Details</h2>
+          <div class="panel-actions">
+            <button type="button" class="text-btn" id="reset-album">Reset</button>
+            <span class="panel-kicker">02</span>
+          </div>
+        </div>
+        <p class="prompt">What is this album called?</p>
+        <input
+          type="text"
+          id="album-name"
+          class="program-input"
+          placeholder="Album name"
+          autocomplete="off"
+        />
+
+        <div class="art-row">
+          <div class="art-drop" id="art-drop" role="button" tabindex="0">
+            <input type="file" id="art-input" accept="image/*" hidden />
+            <img id="art-preview" alt="" hidden />
+            <span class="art-placeholder" id="art-placeholder">
+              <span>Album art</span>
+              <small>Square image</small>
+            </span>
+          </div>
+          <div class="art-copy">
+            <p>Add a thumbnail for the album, or skip and attach one later.</p>
+            <button type="button" class="text-btn" id="art-later">I’ll add a thumbnail later</button>
+            <button type="button" class="text-btn" id="art-apply" hidden>Apply to all thumbnails</button>
+            <button type="button" class="text-btn" id="art-remove" hidden>Remove art</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel reveal" id="thumbs-step" hidden>
+        <div class="panel-head">
+          <h2>Individual Thumbnails</h2>
+          <div class="panel-actions">
+            <button type="button" class="text-btn" id="reset-thumbs">Reset</button>
+            <span class="panel-kicker">03</span>
+          </div>
+        </div>
+        <p class="prompt">Select many images at once — each one becomes a keertani.</p>
+        <div class="dropzone" id="thumbs-drop" role="button" tabindex="0">
+          <input type="file" id="thumbs-input" accept="image/*" multiple hidden />
+          <span class="drop-mark" aria-hidden="true"></span>
+          <span class="drop-title">Drop keertani photos</span>
+          <span class="drop-hint">Select several images, or click to browse</span>
+        </div>
+        <div class="thumbs-strip" id="thumbs-strip" hidden></div>
+      </section>
+
+      <section class="panel reveal" id="timestamps-step" hidden>
+        <div class="panel-head">
+          <h2>Timestamps</h2>
+          <div class="panel-actions">
+            <button type="button" class="text-btn" id="reset-timestamps">Reset</button>
+            <span class="panel-kicker">04</span>
+          </div>
+        </div>
+        <p class="prompt">Paste timestamps to autofill keertani names and times.</p>
+        <textarea
+          id="timestamps-text"
+          class="timestamps-box"
+          spellcheck="false"
+          placeholder="juppie 0:00 23:13
+abhookie 23:58 56:20
+gannu 3:09:55 3:48:38"
+        ></textarea>
+      </section>
+
+      <section class="panel reveal" id="keertani-step" hidden>
+        <div class="panel-head">
+          <h2>Keertanis</h2>
+          <div class="panel-actions">
+            <button type="button" class="text-btn" id="reset-keertanis">Reset</button>
+            <span class="panel-kicker">05</span>
+          </div>
+        </div>
+        <div id="keertani-list" class="keertani-list"></div>
+        <button type="button" class="add-btn" id="add-keertani" aria-label="Add a keertani">
+          <span>+</span>
+          Add keertani
+        </button>
+        <button type="button" class="publish-btn" id="publish">Post to SoundCloud</button>
+      </section>
+    </main>
+
+    <dialog class="modal" id="keys-modal">
+      <form method="dialog" id="keys-form">
+        <h3>SoundCloud app keys</h3>
+        <p>
+          Create an app at
+          <a href="https://soundcloud.com/you/apps" target="_blank" rel="noreferrer">soundcloud.com/you/apps</a>
+          and set this redirect URI:
+        </p>
+        <code class="copy-uri" id="redirect-uri">http://localhost:8000/api/auth/callback</code>
+        <label>
+          Client ID
+          <input type="text" name="client_id" required autocomplete="off" />
+        </label>
+        <label>
+          Client secret
+          <input type="password" name="client_secret" required autocomplete="off" />
+        </label>
+        <div class="modal-actions">
+          <button type="button" class="ghost-btn" value="cancel" id="keys-cancel">Cancel</button>
+          <button type="submit" class="publish-btn compact">Save keys</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="modal" id="signin-modal">
+      <div>
+        <h3>Sign in to SoundCloud</h3>
+        <p>Tracks will be uploaded as private (unlisted) and grouped into an album, in the order you entered.</p>
+        <div class="modal-actions">
+          <button type="button" class="ghost-btn" id="signin-cancel">Cancel</button>
+          <button type="button" class="publish-btn compact" id="signin-go">Continue to SoundCloud</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog class="modal progress-modal" id="progress-modal">
+      <div>
+        <p class="eyebrow">Posting</p>
+        <h3 id="progress-title">Preparing…</h3>
+        <div class="progress-track"><div class="progress-bar" id="progress-bar"></div></div>
+        <p class="progress-copy" id="progress-copy">Splitting audio and uploading to SoundCloud.</p>
+      </div>
+    </dialog>
+
+    <dialog class="modal" id="done-modal">
+      <div>
+        <p class="eyebrow">Posted</p>
+        <h3 id="done-title">Album is live as unlisted.</h3>
+        <p id="done-copy"></p>
+        <ul class="done-tracks" id="done-tracks"></ul>
+        <div class="modal-actions">
+          <a class="publish-btn compact" id="done-link" href="#" target="_blank" rel="noreferrer">Open album</a>
+          <button type="button" class="ghost-btn" id="done-close">Close</button>
+        </div>
+      </div>
+    </dialog>
+
+    <div class="toast" id="toast" hidden></div>
+    <script src="/static/app.js"></script>
+  </body>
+</html>
