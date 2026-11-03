@@ -430,6 +430,8 @@ async def auth_callback(
         me = sc.get_me(token["access_token"])
     except sc.SoundCloudError as e:
         return RedirectResponse(f"/?auth_error={e.status or 'token'}", status_code=302)
+    except Exception:
+        return RedirectResponse("/?auth_error=token", status_code=302)
 
     request.session["sc_token"] = token
     request.session["sc_user"] = public_user(me)
@@ -442,6 +444,13 @@ async def auth_callback(
 async def auth_logout(request: Request) -> Dict[str, Any]:
     request.session.pop("sc_token", None)
     request.session.pop("sc_user", None)
+    return {"ok": True}
+
+
+@app.post("/api/publish/cancel")
+async def cancel_publish(request: Request) -> Dict[str, Any]:
+    flag = session_dir(request) / "cancel_publish"
+    flag.write_text("1", encoding="utf-8")
     return {"ok": True}
 
 
@@ -514,6 +523,9 @@ async def publish(request: Request) -> StreamingResponse:
         )
 
     work_dir = session_dir(request)
+    cancel_flag = work_dir / "cancel_publish"
+    if cancel_flag.exists():
+        cancel_flag.unlink()
     tracks_dir = work_dir / "tracks"
     if tracks_dir.exists():
         shutil.rmtree(tracks_dir)
@@ -523,6 +535,9 @@ async def publish(request: Request) -> StreamingResponse:
 
     def sse(event: str, data: Dict[str, Any]) -> str:
         return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+    def cancelled() -> bool:
+        return cancel_flag.exists()
 
     def generate():
         try:
@@ -534,6 +549,10 @@ async def publish(request: Request) -> StreamingResponse:
             width = max(2, len(str(total)))
 
             for item in prepared:
+                if cancelled():
+                    yield sse("error", {"message": "Publish cancelled.", "cancelled": True})
+                    return
+
                 index = item["index"]
                 title = item["title"]
                 yield sse(
@@ -548,6 +567,10 @@ async def publish(request: Request) -> StreamingResponse:
                 )
                 outfile = tracks_dir / f"{str(index).zfill(width)} - {title}.mp3"
                 export_segment(audio, outfile, item["segment"])
+
+                if cancelled():
+                    yield sse("error", {"message": "Publish cancelled.", "cancelled": True})
+                    return
 
                 yield sse(
                     "progress",
@@ -582,6 +605,10 @@ async def publish(request: Request) -> StreamingResponse:
                     }
                 )
 
+            if cancelled():
+                yield sse("error", {"message": "Publish cancelled.", "cancelled": True})
+                return
+
             yield sse(
                 "progress",
                 {
@@ -589,7 +616,7 @@ async def publish(request: Request) -> StreamingResponse:
                     "index": total,
                     "total": total,
                     "title": album_name,
-                    "message": f"Creating unlisted album: {album_name}",
+                    "message": f"Creating album and attaching {total} tracks…",
                 },
             )
             playlist = sc.create_album(
@@ -598,24 +625,47 @@ async def publish(request: Request) -> StreamingResponse:
                 uploaded_ids,
                 artwork_path=fallback_art,
                 sharing="private",
-                description=f"{total} keertanis — posted with SplitTracks",
+                description=f"{total} keertanis - posted with SplitTracks",
             )
-            playlist_url = playlist.get("permalink_url") or ""
+            playlist_url = playlist.get("permalink_url") or playlist.get("secret_uri") or ""
             if playlist.get("secret_token") and playlist_url and "secret_token" not in playlist_url:
                 playlist_url = f"{playlist_url}/{playlist['secret_token']}"
+
+            track_count = playlist.get("track_count")
+            tracks_list = playlist.get("tracks")
+            if isinstance(tracks_list, list):
+                track_count = len(tracks_list)
 
             yield sse(
                 "done",
                 {
                     "album": album_name,
+                    "playlist_id": playlist.get("id"),
                     "playlist_url": playlist_url,
+                    "set_type": playlist.get("set_type") or playlist.get("playlist_type"),
+                    "track_count": track_count,
+                    "sharing": playlist.get("sharing"),
                     "tracks": uploaded_tracks,
+                    "warning": playlist.get("_attach_warning") or None,
                 },
             )
         except (SplitError, sc.SoundCloudError, OSError) as e:
             yield sse("error", {"message": str(e)})
         except Exception as e:
+            import traceback
+
+            detail = traceback.format_exc()
+            try:
+                (SESSIONS_DIR / "last_publish_error.txt").write_text(detail, encoding="utf-8")
+            except OSError:
+                pass
             yield sse("error", {"message": f"Unexpected error: {e}"})
+        finally:
+            if cancel_flag.exists():
+                try:
+                    cancel_flag.unlink()
+                except OSError:
+                    pass
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 

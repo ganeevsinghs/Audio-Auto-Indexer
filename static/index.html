@@ -58,6 +58,27 @@
         </div>
       </section>
 
+      <section class="panel collapsible collapsed" id="backup-step">
+        <div class="panel-head collapsible-head">
+          <button type="button" class="panel-toggle" aria-expanded="false">
+            <span class="chevron" aria-hidden="true"></span>
+            <h2>Import from Backup</h2>
+          </button>
+          <div class="panel-actions">
+            <span class="panel-kicker">01b</span>
+          </div>
+        </div>
+        <div class="panel-body">
+          <p class="prompt">Restore album details and keertanis from a SplitTracks backup (.txt).</p>
+          <div class="dropzone compact" id="backup-drop" role="button" tabindex="0">
+            <input type="file" id="backup-input" accept=".txt,text/plain,application/json" hidden />
+            <span class="drop-mark" aria-hidden="true"></span>
+            <span class="drop-title">Drop a backup file</span>
+            <span class="drop-hint">Or click to browse — restores text + album art (not audio)</span>
+          </div>
+        </div>
+      </section>
+
       <section class="panel reveal" id="program-step" hidden>
         <div class="panel-head">
           <h2>Album Details</h2>
@@ -93,41 +114,51 @@
         </div>
       </section>
 
-      <section class="panel reveal" id="thumbs-step" hidden>
-        <div class="panel-head">
-          <h2>Individual Thumbnails</h2>
+      <section class="panel reveal collapsible collapsed" id="thumbs-step" hidden>
+        <div class="panel-head collapsible-head">
+          <button type="button" class="panel-toggle" aria-expanded="false">
+            <span class="chevron" aria-hidden="true"></span>
+            <h2>Individual Thumbnails</h2>
+          </button>
           <div class="panel-actions">
             <button type="button" class="text-btn" id="reset-thumbs">Reset</button>
             <span class="panel-kicker">03</span>
           </div>
         </div>
-        <p class="prompt">Select many images at once — each one becomes a keertani.</p>
-        <div class="dropzone" id="thumbs-drop" role="button" tabindex="0">
-          <input type="file" id="thumbs-input" accept="image/*" multiple hidden />
-          <span class="drop-mark" aria-hidden="true"></span>
-          <span class="drop-title">Drop keertani photos</span>
-          <span class="drop-hint">Select several images, or click to browse</span>
+        <div class="panel-body">
+          <p class="prompt">Select many images at once — each one becomes a keertani.</p>
+          <div class="dropzone" id="thumbs-drop" role="button" tabindex="0">
+            <input type="file" id="thumbs-input" accept="image/*" multiple hidden />
+            <span class="drop-mark" aria-hidden="true"></span>
+            <span class="drop-title">Drop keertani photos</span>
+            <span class="drop-hint">Select several images, or click to browse</span>
+          </div>
+          <div class="thumbs-strip" id="thumbs-strip" hidden></div>
         </div>
-        <div class="thumbs-strip" id="thumbs-strip" hidden></div>
       </section>
 
-      <section class="panel reveal" id="timestamps-step" hidden>
-        <div class="panel-head">
-          <h2>Timestamps</h2>
+      <section class="panel reveal collapsible collapsed" id="timestamps-step" hidden>
+        <div class="panel-head collapsible-head">
+          <button type="button" class="panel-toggle" aria-expanded="false">
+            <span class="chevron" aria-hidden="true"></span>
+            <h2>Timestamps</h2>
+          </button>
           <div class="panel-actions">
             <button type="button" class="text-btn" id="reset-timestamps">Reset</button>
             <span class="panel-kicker">04</span>
           </div>
         </div>
-        <p class="prompt">Paste timestamps to autofill keertani names and times.</p>
-        <textarea
-          id="timestamps-text"
-          class="timestamps-box"
-          spellcheck="false"
-          placeholder="juppie 0:00 23:13
+        <div class="panel-body">
+          <p class="prompt">Paste timestamps to autofill keertani names and times.</p>
+          <textarea
+            id="timestamps-text"
+            class="timestamps-box"
+            spellcheck="false"
+            placeholder="juppie 0:00 23:13
 abhookie 23:58 56:20
 gannu 3:09:55 3:48:38"
-        ></textarea>
+          ></textarea>
+        </div>
       </section>
 
       <section class="panel reveal" id="keertani-step" hidden>
@@ -153,9 +184,13 @@ gannu 3:09:55 3:48:38"
         <p>
           Create an app at
           <a href="https://soundcloud.com/you/apps" target="_blank" rel="noreferrer">soundcloud.com/you/apps</a>
-          and set this redirect URI:
+          and set the Redirect URI to <strong>exactly</strong> this (including <code>http://</code>):
         </p>
         <code class="copy-uri" id="redirect-uri">http://localhost:8000/api/auth/callback</code>
+        <p class="modal-note">
+          A blank SoundCloud login page almost always means this URI does not match what’s saved on your app.
+          Do not use <code>127.0.0.1</code>, <code>https://</code>, or a trailing slash.
+        </p>
         <label>
           Client ID
           <input type="text" name="client_id" required autocomplete="off" />
@@ -175,6 +210,10 @@ gannu 3:09:55 3:48:38"
       <div>
         <h3>Sign in to SoundCloud</h3>
         <p>Tracks will be uploaded as private (unlisted) and grouped into an album, in the order you entered.</p>
+        <p class="modal-note">
+          Your SoundCloud app Redirect URI must be exactly:
+          <code id="signin-redirect-uri">http://localhost:8000/api/auth/callback</code>
+        </p>
         <div class="modal-actions">
           <button type="button" class="ghost-btn" id="signin-cancel">Cancel</button>
           <button type="button" class="publish-btn compact" id="signin-go">Continue to SoundCloud</button>
@@ -188,6 +227,9 @@ gannu 3:09:55 3:48:38"
         <h3 id="progress-title">Preparing…</h3>
         <div class="progress-track"><div class="progress-bar" id="progress-bar"></div></div>
         <p class="progress-copy" id="progress-copy">Splitting audio and uploading to SoundCloud.</p>
+        <div class="modal-actions progress-actions">
+          <button type="button" class="ghost-btn" id="progress-cancel">Cancel</button>
+        </div>
       </div>
     </dialog>
 

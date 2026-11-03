@@ -48,6 +48,8 @@ const els = {
   keertaniList: document.getElementById("keertani-list"),
   addKeertani: document.getElementById("add-keertani"),
   publish: document.getElementById("publish"),
+  backupDrop: document.getElementById("backup-drop"),
+  backupInput: document.getElementById("backup-input"),
   account: document.getElementById("account"),
   accountName: document.getElementById("account-name"),
   signOut: document.getElementById("sign-out"),
@@ -62,6 +64,7 @@ const els = {
   progressTitle: document.getElementById("progress-title"),
   progressBar: document.getElementById("progress-bar"),
   progressCopy: document.getElementById("progress-copy"),
+  progressCancel: document.getElementById("progress-cancel"),
   doneModal: document.getElementById("done-modal"),
   doneTitle: document.getElementById("done-title"),
   doneCopy: document.getElementById("done-copy"),
@@ -70,6 +73,8 @@ const els = {
   doneClose: document.getElementById("done-close"),
   toast: document.getElementById("toast"),
 };
+
+let publishAbort = null;
 
 function uid() {
   return crypto.randomUUID ? crypto.randomUUID() : `k-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -86,7 +91,8 @@ function blankKeertani() {
     start: "",
     end: "",
     thumb: false,
-    useAlbumArt: state.albumThumbDefault,
+    // Album art never auto-applies — only via "Apply to all thumbnails".
+    useAlbumArt: false,
   };
 }
 
@@ -438,8 +444,15 @@ async function uploadArt(file) {
   state.albumArt = true;
   state.albumArtVersion = Date.now();
   state.artLater = false;
+  // Adding cover does not apply it to keertani thumbs unless user presses Apply.
+  state.albumThumbDefault = false;
+  for (const k of state.keertanis) {
+    if (!k.thumb) k.useAlbumArt = false;
+  }
   renderArt();
   maybeShowKeertanis();
+  renderKeertanis();
+  renderThumbsStrip();
   saveLocal();
 }
 
@@ -468,16 +481,30 @@ async function importThumbnails(files) {
   const images = [...files].filter((file) => file.type.startsWith("image/"));
   if (!images.length) return;
   toast(`Adding ${images.length} keertani${images.length === 1 ? "" : "s"}…`);
+
+  // Drop empty starter cards so N photos → N keertanis (no leftover default).
   state.keertanis = state.keertanis.filter(keertaniHasContent);
-  for (const file of images) {
-    const keertani = blankKeertani();
+
+  let imageIndex = 0;
+  // Fill existing cards that still need a photo first (e.g. from timestamps).
+  for (const keertani of state.keertanis) {
+    if (imageIndex >= images.length) break;
+    if (keertani.thumb) continue;
     keertani.useAlbumArt = false;
-    state.keertanis.push(keertani);
-    await uploadThumb(keertani, file);
+    await uploadThumb(keertani, images[imageIndex]);
+    imageIndex += 1;
   }
-  if (!state.keertanis.length) state.keertanis.push(blankKeertani());
+
+  while (imageIndex < images.length) {
+    const keertani = blankKeertani();
+    state.keertanis.push(keertani);
+    await uploadThumb(keertani, images[imageIndex]);
+    imageIndex += 1;
+  }
+
   show(els.keertaniStep);
   renderKeertanis();
+  renderThumbsStrip();
   saveLocal();
   toast(`Created ${images.length} keertani${images.length === 1 ? "" : "s"} from photos.`);
 }
@@ -535,6 +562,7 @@ function applyAlbumArtToThumbs() {
     if (!k.thumb) k.useAlbumArt = true;
   }
   renderKeertanis();
+  renderThumbsStrip();
   saveLocal();
   toast("Album art applied to empty thumbnails.");
 }
@@ -550,7 +578,7 @@ async function resetKeertani(k) {
   k.start = "";
   k.end = "";
   k.thumb = false;
-  k.useAlbumArt = state.albumThumbDefault;
+  k.useAlbumArt = false;
   k.program = state.sharedProgram;
   renderKeertanis();
   saveLocal();
@@ -653,6 +681,189 @@ function publishPayload() {
   };
 }
 
+function extensionForMime(mime) {
+  const map = {
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/png": "png",
+    "image/gif": "gif",
+    "image/webp": "webp",
+  };
+  return map[(mime || "").toLowerCase()] || "jpg";
+}
+
+async function fetchAsDataUrl(url) {
+  const response = await fetch(url);
+  if (!response.ok) return null;
+  const blob = await response.blob();
+  const dataUrl = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("Could not read image."));
+    reader.readAsDataURL(blob);
+  });
+  return {
+    data_url: dataUrl,
+    mime: blob.type || "image/jpeg",
+    filename: `image.${extensionForMime(blob.type)}`,
+  };
+}
+
+async function uploadDataUrl(path, image) {
+  if (!image || !image.data_url) return;
+  const response = await fetch(image.data_url);
+  const blob = await response.blob();
+  const body = new FormData();
+  body.append("file", blob, image.filename || `image.${extensionForMime(blob.type)}`);
+  await api(path, { method: "POST", body });
+}
+
+async function backupPayload() {
+  const payload = {
+    version: 2,
+    app: "SplitTracks",
+    saved_at: new Date().toISOString(),
+    album_name: state.albumName.trim(),
+    shared_program: state.sharedProgram || state.albumName.trim(),
+    timestamps_text: state.timestampsText || "",
+    art_later: !!state.artLater,
+    album_thumb_default: !!state.albumThumbDefault,
+    album_art: null,
+    keertanis: [],
+  };
+
+  if (state.albumArt) {
+    try {
+      payload.album_art = await fetchAsDataUrl(
+        `/api/files/album-art${state.albumArtVersion ? `?v=${state.albumArtVersion}` : ""}`
+      );
+    } catch {
+      payload.album_art = null;
+    }
+  }
+
+  for (const k of state.keertanis) {
+    const item = {
+      honorific: k.honorific,
+      name: k.name,
+      title: k.title,
+      origin: k.origin,
+      program: k.program,
+      start: k.start,
+      end: k.end,
+      use_album_art: !!k.useAlbumArt,
+      thumbnail: null,
+    };
+    if (k.thumb) {
+      try {
+        item.thumbnail = await fetchAsDataUrl(thumbSrc(k));
+      } catch {
+        item.thumbnail = null;
+      }
+    }
+    payload.keertanis.push(item);
+  }
+
+  return payload;
+}
+
+async function downloadBackup() {
+  const payload = await backupPayload();
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  const nameBit = (payload.album_name || "draft").replace(/[^\w\-]+/g, "_").slice(0, 40);
+  const text =
+    "SplitTracks Backup v2\n" +
+    "# Includes album art and keertani thumbnails. Audio is not included.\n" +
+    JSON.stringify(payload, null, 2) +
+    "\n";
+  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `splittracks-backup-${nameBit || "draft"}-${stamp}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function parseBackupText(raw) {
+  const text = String(raw || "").trim();
+  if (!text) throw new Error("Backup file is empty.");
+  const jsonStart = text.indexOf("{");
+  if (jsonStart < 0) throw new Error("Backup file is missing JSON data.");
+  let data;
+  try {
+    data = JSON.parse(text.slice(jsonStart));
+  } catch {
+    throw new Error("Could not read backup JSON.");
+  }
+  if (!data || typeof data !== "object") throw new Error("Invalid backup format.");
+  return data;
+}
+
+async function applyBackup(data) {
+  const album = (data.album_name || data.albumName || data.program || "").trim();
+  state.albumName = album;
+  state.sharedProgram = (data.shared_program || data.sharedProgram || album).trim();
+  state.timestampsText = data.timestamps_text || data.timestampsText || "";
+  state.artLater = !!(data.art_later ?? data.artLater);
+  state.albumThumbDefault = !!(data.album_thumb_default ?? data.albumThumbDefault);
+
+  const list = Array.isArray(data.keertanis) ? data.keertanis : [];
+  state.keertanis = list.length
+    ? list.map((item) => ({
+        ...blankKeertani(),
+        honorific: item.honorific === "Bibi" ? "Bibi" : "Bhai",
+        name: item.name || "",
+        title: item.title || (item.honorific === "Bibi" ? "Kaur Jee" : "Singh Jee"),
+        origin: item.origin || "",
+        program: item.program || state.sharedProgram,
+        start: item.start || "",
+        end: item.end || "",
+        useAlbumArt: !!(item.use_album_art ?? item.useAlbumArt ?? state.albumThumbDefault),
+        thumb: false,
+      }))
+    : [blankKeertani()];
+
+  els.albumName.value = state.albumName;
+  renderTimestamps();
+  show(els.programStep);
+  show(els.thumbsStep);
+  show(els.timestampsStep);
+  show(els.keertaniStep);
+
+  const albumArt = data.album_art || data.albumArt;
+  if (albumArt && albumArt.data_url) {
+    await uploadDataUrl("/api/album-art", albumArt);
+    state.albumArt = true;
+    state.albumArtVersion = Date.now();
+    state.artLater = false;
+  }
+
+  for (let i = 0; i < state.keertanis.length; i += 1) {
+    const source = list[i] || {};
+    const thumb = source.thumbnail || source.thumb_image;
+    if (thumb && thumb.data_url) {
+      await uploadDataUrl(`/api/thumbnail/${state.keertanis[i].id}`, thumb);
+      state.keertanis[i].thumb = true;
+      state.keertanis[i].thumbVersion = Date.now();
+      state.keertanis[i].useAlbumArt = false;
+    }
+  }
+
+  renderArt();
+  renderKeertanis();
+  renderThumbsStrip();
+  saveLocal();
+  toast(`Imported ${state.keertanis.length} keertani${state.keertanis.length === 1 ? "" : "s"} from backup.`);
+}
+
+async function importBackupFile(file) {
+  const raw = await file.text();
+  await applyBackup(parseBackupText(raw));
+}
+
 async function startPublish() {
   const problem = validate();
   if (problem) {
@@ -660,6 +871,7 @@ async function startPublish() {
     return;
   }
   saveLocal();
+  await downloadBackup();
   if (!state.hasKeys) {
     els.redirectUri.textContent = state.redirectUri;
     els.keysModal.showModal();
@@ -668,23 +880,50 @@ async function startPublish() {
   if (!state.authenticated) {
     state.pendingPublish = true;
     saveLocal();
+    const redirectEl = document.getElementById("signin-redirect-uri");
+    if (redirectEl) redirectEl.textContent = state.redirectUri;
     els.signinModal.showModal();
     return;
   }
   await postToSoundCloud();
 }
 
+async function cancelPublish() {
+  if (publishAbort) publishAbort.abort();
+  try {
+    await fetch("/api/publish/cancel", { method: "POST" });
+  } catch {
+    /* ignore */
+  }
+  if (els.progressModal.open) els.progressModal.close();
+  toast("Publish cancelled.");
+}
+
 async function postToSoundCloud() {
+  if (publishAbort) publishAbort.abort();
+  publishAbort = new AbortController();
+
   els.progressModal.showModal();
   els.progressTitle.textContent = "Splitting tracks…";
   els.progressCopy.textContent = "Encoding MP3s, then uploading privately to SoundCloud.";
   els.progressBar.style.width = "6%";
 
-  const response = await fetch("/api/publish", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(publishPayload()),
-  });
+  let response;
+  try {
+    response = await fetch("/api/publish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(publishPayload()),
+      signal: publishAbort.signal,
+    });
+  } catch (err) {
+    if (els.progressModal.open) els.progressModal.close();
+    if (err.name === "AbortError") {
+      toast("Publish cancelled.");
+      return;
+    }
+    throw err;
+  }
 
   if (response.status === 401) {
     els.progressModal.close();
@@ -705,44 +944,63 @@ async function postToSoundCloud() {
   let buffer = "";
   let currentEvent = "message";
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const chunks = buffer.split("\n\n");
-    buffer = chunks.pop() || "";
-    for (const chunk of chunks) {
-      let dataLine = "";
-      currentEvent = "message";
-      for (const line of chunk.split("\n")) {
-        if (line.startsWith("event:")) currentEvent = line.slice(6).trim();
-        if (line.startsWith("data:")) dataLine += line.slice(5).trim();
-      }
-      if (!dataLine) continue;
-      const data = JSON.parse(dataLine);
-      if (currentEvent === "progress") {
-        const pct = Math.min(96, Math.round((data.index / data.total) * 90) + (data.stage === "upload" ? 6 : 0));
-        els.progressBar.style.width = `${pct}%`;
-        els.progressTitle.textContent = data.stage === "album" ? "Creating album" : data.title;
-        els.progressCopy.textContent = data.message;
-      } else if (currentEvent === "error") {
-        els.progressModal.close();
-        toast(data.message || "Publish failed.");
-        return;
-      } else if (currentEvent === "done") {
-        els.progressBar.style.width = "100%";
-        els.progressModal.close();
-        showDone(data);
-        state.pendingPublish = false;
-        saveLocal();
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const chunks = buffer.split("\n\n");
+      buffer = chunks.pop() || "";
+      for (const chunk of chunks) {
+        let dataLine = "";
+        currentEvent = "message";
+        for (const line of chunk.split("\n")) {
+          if (line.startsWith("event:")) currentEvent = line.slice(6).trim();
+          if (line.startsWith("data:")) dataLine += line.slice(5).trim();
+        }
+        if (!dataLine) continue;
+        const data = JSON.parse(dataLine);
+        if (currentEvent === "progress") {
+          const pct = Math.min(96, Math.round((data.index / data.total) * 90) + (data.stage === "upload" ? 6 : 0));
+          els.progressBar.style.width = `${pct}%`;
+          els.progressTitle.textContent = data.stage === "album" ? "Creating album" : data.title;
+          els.progressCopy.textContent = data.message;
+        } else if (currentEvent === "error") {
+          els.progressModal.close();
+          toast(data.message || "Publish failed.");
+          return;
+        } else if (currentEvent === "done") {
+          els.progressBar.style.width = "100%";
+          els.progressModal.close();
+          showDone(data);
+          state.pendingPublish = false;
+          saveLocal();
+        }
       }
     }
+  } catch (err) {
+    if (els.progressModal.open) els.progressModal.close();
+    if (err.name === "AbortError") {
+      toast("Publish cancelled.");
+      return;
+    }
+    throw err;
+  } finally {
+    publishAbort = null;
   }
 }
 
 function showDone(data) {
   els.doneTitle.textContent = data.album || "Posted.";
-  els.doneCopy.textContent = "Tracks are private / unlisted and grouped on this album, in order.";
+  const bits = [];
+  if (data.set_type) bits.push(data.set_type);
+  if (data.sharing) bits.push(data.sharing);
+  if (data.track_count != null) bits.push(`${data.track_count} tracks`);
+  let copy = bits.length
+    ? `SoundCloud ${bits.join(" · ")}. Open the album link below — private albums use a secret URL.`
+    : "Tracks are private / unlisted and grouped on this album, in order.";
+  if (data.warning) copy = `${copy} ${data.warning}`;
+  els.doneCopy.textContent = copy;
   els.doneTracks.innerHTML = "";
   for (const track of data.tracks || []) {
     const li = document.createElement("li");
@@ -767,10 +1025,25 @@ function showDone(data) {
   els.doneModal.showModal();
 }
 
+document.querySelectorAll(".panel.collapsible").forEach((panel) => {
+  const toggle = panel.querySelector(".panel-toggle");
+  if (!toggle) return;
+  toggle.addEventListener("click", () => {
+    const open = !panel.classList.toggle("collapsed");
+    toggle.setAttribute("aria-expanded", open ? "true" : "false");
+  });
+});
+
 bindDrop(els.audioDrop, els.audioInput, (file) => {
   uploadAudio(file).catch((err) => toast(err.message));
 });
+bindDrop(els.backupDrop, els.backupInput, (file) => {
+  importBackupFile(file).catch((err) => toast(err.message));
+});
 els.replaceAudio.addEventListener("click", () => els.audioInput.click());
+els.progressCancel.addEventListener("click", () => {
+  cancelPublish().catch(() => {});
+});
 els.restart.addEventListener("click", () => {
   restartAll().catch((err) => toast(err.message));
 });
@@ -780,10 +1053,12 @@ els.resetAudio.addEventListener("click", () => {
 els.resetAlbum.addEventListener("click", () => {
   resetAlbum().catch((err) => toast(err.message));
 });
-els.resetThumbs.addEventListener("click", () => {
+els.resetThumbs.addEventListener("click", (event) => {
+  event.stopPropagation();
   resetThumbs().catch((err) => toast(err.message));
 });
-els.resetTimestamps.addEventListener("click", () => {
+els.resetTimestamps.addEventListener("click", (event) => {
+  event.stopPropagation();
   resetTimestamps();
 });
 els.timestampsText.addEventListener("input", () => {

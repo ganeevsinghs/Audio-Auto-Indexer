@@ -151,6 +151,55 @@ h3 {
   margin-bottom: 0;
 }
 
+.panel-head.collapsible-head {
+  align-items: center;
+}
+
+.panel.collapsible.collapsed .panel-head {
+  margin-bottom: 0;
+}
+
+.panel.collapsible.collapsed {
+  padding-bottom: 22px;
+}
+
+.panel.collapsible.collapsed .panel-body {
+  display: none;
+}
+
+.panel-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.panel-toggle h2 {
+  margin: 0;
+}
+
+.chevron {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border-right: 1.5px solid var(--ink-soft);
+  border-bottom: 1.5px solid var(--ink-soft);
+  transform: rotate(-45deg);
+  transition: transform 0.18s ease;
+}
+
+.panel.collapsible:not(.collapsed) .chevron {
+  transform: rotate(45deg);
+}
+
 .panel-actions {
   display: flex;
   align-items: baseline;
@@ -194,6 +243,16 @@ h3 {
   min-height: 168px;
   padding: 28px;
   gap: 6px;
+}
+
+.dropzone.compact {
+  min-height: 120px;
+  padding: 22px;
+}
+
+.progress-actions {
+  margin-top: 18px;
+  justify-content: flex-start;
 }
 
 .drop-mark {
@@ -595,6 +654,20 @@ a.publish-btn.compact {
 .modal p,
 .modal label {
   color: var(--ink-soft);
+}
+
+.modal-note {
+  margin: 12px 0 0;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.modal-note code {
+  display: inline;
+  padding: 0 4px;
+  background: var(--paper-deep);
+  color: var(--ink);
+  word-break: break-all;
 }
 
 .modal a {
